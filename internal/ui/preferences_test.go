@@ -355,7 +355,7 @@ func TestOnlyCustomKeybindingsFiltersScopesAndPersistsWithoutLosingAliases(t *te
 		t.Fatal("enter did not toggle the global option")
 	}
 	// The filter never removes entries from the management list.
-	if len(m.ranked) != len(m.source.All())+1 {
+	if len(m.ranked) != len(m.source.All())+settingsControls {
 		t.Fatal("global option filtered its own settings list")
 	}
 	if !m.savePreference("a", settings.EntryPreference{Hidden: true}) {
@@ -393,7 +393,7 @@ func TestOnlyCustomKeybindingsFiltersScopesAndPersistsWithoutLosingAliases(t *te
 	}
 	m = manage(t, reopened)
 	m = typeQuery(t, m, "unmatchedquery")
-	if len(m.ranked) != 1 || m.ranked[0].Entry.ID != customKeysOnlyID {
+	if len(m.ranked) != settingsControls || m.ranked[0].Entry.ID != customKeysOnlyID {
 		t.Fatal("search hid the global display option")
 	}
 	m, _ = click(t, m, 4, headerRows)
@@ -495,5 +495,81 @@ func TestSettingsCheckboxesKeepSearchHighlightsOnTheMatchedText(t *testing.T) {
 			t.Fatalf("checkbox shifted search highlighting: %q in %q", string(matched), string(name))
 		}
 		m.toggleEntry()
+	}
+}
+
+func TestBulkVisibilityPersistsAndKeepsAliasesAndTheCustomKeybindingsOption(t *testing.T) {
+	m := preferenceModel(t)
+	m.source.Commands[1].Key = "prefix+j"
+	m.source.Session.Entries = []palette.Entry{{ID: "pane:1", Title: "My pane", Kind: palette.KindPane}}
+	m.preferences.CustomKeysOnly = true
+	if !m.savePreference("a", settings.EntryPreference{Hidden: true, Alias: "分屏"}) ||
+		!m.savePreference("b", settings.EntryPreference{Alias: "自定义命令"}) ||
+		!m.savePreference("missing", settings.EntryPreference{Hidden: true, Alias: "Temporarily unavailable"}) {
+		t.Fatal(m.failure)
+	}
+	m.rank()
+	m = manage(t, m)
+	m, _ = send(t, m, tea.PasteMsg{Content: "split"})
+	selectEntry(t, &m, hideAllID)
+	m, cmd := send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("bulk visibility executed a command")
+	}
+	for _, entry := range m.source.All() {
+		if !m.preferences.Entries[entry.ID].Hidden {
+			t.Fatalf("hide all missed an entry outside the search: %s", entry.ID)
+		}
+	}
+	if !m.preferences.CustomKeysOnly || m.preferences.Entries["a"].Alias != "分屏" || m.preferences.Entries["b"].Alias != "自定义命令" {
+		t.Fatal("hide all changed aliases or the global filter")
+	}
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if len(m.ranked) != 0 {
+		t.Fatal("hide all left normal entries visible")
+	}
+	// Settings must still open when the palette is empty, and the restore
+	// action must work on all entries, rather than only the current scope.
+	m = manage(t, m)
+	selectEntry(t, &m, selectAllID)
+	m, cmd = click(t, m, 4, headerRows+m.lineOf(m.cursor)-m.offset)
+	if cmd != nil || m.cursor >= len(m.ranked) || m.ranked[m.cursor].Entry.ID != selectAllID {
+		t.Fatal("select all executed an entry or lost its selection")
+	}
+	for _, entry := range m.source.All() {
+		if m.preferences.Entries[entry.ID].Hidden {
+			t.Fatalf("select all missed %s", entry.ID)
+		}
+	}
+	if !m.preferences.Entries["missing"].Hidden || m.preferences.Entries["missing"].Alias != "Temporarily unavailable" {
+		t.Fatal("bulk action changed preferences for an unavailable entry")
+	}
+	for _, id := range []string{customKeysOnlyID, selectAllID, hideAllID} {
+		if _, saved := m.preferences.Entries[id]; saved {
+			t.Fatal("settings controls were saved as real entry preferences")
+		}
+	}
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if len(m.ranked) != 1 || m.ranked[0].Entry.ID != "b" || m.ranked[0].Entry.Title != "自定义命令" {
+		t.Fatal("select all cleared the custom-only option or an alias")
+	}
+	reopened := newModel(m.ctx, m.env, m.invocation, m.source, nil, m.colours, Toggle{})
+	if !reopened.preferences.CustomKeysOnly || len(reopened.ranked) != 1 || reopened.preferences.Entries["a"].Alias != "分屏" {
+		t.Fatal("bulk action was not persisted correctly")
+	}
+}
+
+func TestBulkVisibilitySaveFailureKeepsAllPreviousPreferences(t *testing.T) {
+	m := manage(t, preferenceModel(t))
+	m.preferences.Entries["a"] = settings.EntryPreference{Hidden: true, Alias: "Keep this"}
+	if err := os.Mkdir(m.env.ConfigPath(settings.EntriesFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{selectAllID, hideAllID} {
+		selectEntry(t, &m, id)
+		m, _ = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+		if m.failure == "" || m.preferences.Entries["a"] != (settings.EntryPreference{Hidden: true, Alias: "Keep this"}) || m.preferences.Entries["b"].Hidden {
+			t.Fatal("failed bulk save partially changed entry preferences")
+		}
 	}
 }

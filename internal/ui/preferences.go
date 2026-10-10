@@ -22,7 +22,12 @@ type entryEditor struct {
 	aliasTitle string
 }
 
-const customKeysOnlyID = "settings:custom-keybindings-only"
+const (
+	customKeysOnlyID = "settings:custom-keybindings-only"
+	selectAllID      = "settings:select-all"
+	hideAllID        = "settings:hide-all"
+	settingsControls = 3
+)
 
 func (m model) customKeysOnlyRow() palette.Ranked {
 	check := "[ ] "
@@ -35,8 +40,24 @@ func (m model) customKeysOnlyRow() palette.Ranked {
 	}
 }
 
-func (m model) onCustomKeysOnly() bool {
-	return m.cursor < len(m.ranked) && m.ranked[m.cursor].Entry.ID == customKeysOnlyID
+func (m model) bulkVisibilityRows() []palette.Ranked {
+	return []palette.Ranked{
+		{Entry: palette.Entry{ID: selectAllID, Title: "[ Select all entries ]", Type: "Settings"},
+			Detail: "Show every entry, including outside this search"},
+		{Entry: palette.Entry{ID: hideAllID, Title: "[ Hide all entries ]", Type: "Settings"},
+			Detail: "Hide every entry, including outside this search"},
+	}
+}
+
+func (m model) onSettingsControl() bool {
+	if m.cursor >= len(m.ranked) {
+		return false
+	}
+	switch m.ranked[m.cursor].Entry.ID {
+	case customKeysOnlyID, selectAllID, hideAllID:
+		return true
+	}
+	return false
 }
 
 // entryControl sits above the query so it never takes room from search text
@@ -192,6 +213,10 @@ func (m *model) toggleEntry() {
 		return
 	}
 	id := m.ranked[m.cursor].Entry.ID
+	if id == selectAllID || id == hideAllID {
+		m.setAllHidden(id == hideAllID, id)
+		return
+	}
 	if id == customKeysOnlyID {
 		next := m.preferences
 		next.CustomKeysOnly = !next.CustomKeysOnly
@@ -204,6 +229,27 @@ func (m *model) toggleEntry() {
 	preference.Hidden = !preference.Hidden
 	if m.savePreference(id, preference) {
 		m.rankKeeping(id)
+	}
+}
+
+func (m *model) setAllHidden(hidden bool, selected string) {
+	entries := m.source.All()
+	if len(entries) == 0 {
+		return
+	}
+	next := m.preferences
+	next.Entries = maps.Clone(m.preferences.Entries)
+	for _, entry := range entries {
+		preference := next.Entries[entry.ID]
+		preference.Hidden = hidden
+		if preference == (settings.EntryPreference{}) {
+			delete(next.Entries, entry.ID)
+		} else {
+			next.Entries[entry.ID] = preference
+		}
+	}
+	if m.savePreferences(next) {
+		m.rankKeeping(selected)
 	}
 }
 
@@ -262,7 +308,7 @@ func (m model) keyEntries(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "space":
 		m.toggleEntry()
 	case "enter":
-		if m.onCustomKeysOnly() {
+		if m.onSettingsControl() {
 			m.toggleEntry()
 		} else {
 			m.editAlias()
@@ -294,9 +340,13 @@ func (m model) editAliasInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) entriesFooter() string {
 	hints := []hint{{"space/click", "show/hide"}, {spelling.name("enter"), "alias"}, {spelling.name("esc"), "back"}}
-	left := fmt.Sprintf(" %d entries · saved automatically", max(len(m.ranked)-1, 0))
-	if m.onCustomKeysOnly() {
-		hints = []hint{{"space/click", "toggle"}, {spelling.name("enter"), "toggle"}, {spelling.name("esc"), "back"}}
+	left := fmt.Sprintf(" %d entries · saved automatically", max(len(m.ranked)-settingsControls, 0))
+	if m.onSettingsControl() {
+		act := "apply"
+		if m.ranked[m.cursor].Entry.ID == customKeysOnlyID {
+			act = "toggle"
+		}
+		hints = []hint{{"space/click", act}, {spelling.name("enter"), act}, {spelling.name("esc"), "back"}}
 	}
 	if m.editor.aliasID != "" {
 		hints = []hint{{spelling.name("enter"), "save"}, {spelling.name("esc"), "cancel"}}

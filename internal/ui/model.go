@@ -977,9 +977,10 @@ func (m *model) rank() {
 		for i, row := range m.ranked {
 			m.ranked[i] = m.markVisibility(row)
 		}
-		// Keep the global display option first and available even when the
-		// entry search has no matches.
-		m.ranked = append([]palette.Ranked{m.customKeysOnlyRow()}, m.ranked...)
+		// Display options and bulk actions remain available even when the
+		// entry search has no matches or every entry is hidden.
+		controls := append([]palette.Ranked{m.customKeysOnlyRow()}, m.bulkVisibilityRows()...)
+		m.ranked = append(controls, m.ranked...)
 	}
 	// A list nobody has searched yet is laid out in groups; a query's matches
 	// are one list in the order they matched, which the groups would break.

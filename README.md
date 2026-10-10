@@ -119,6 +119,13 @@ can always be changed. Turning it off restores the full list, respecting each
 entry's hidden state. The option defaults to off and is saved automatically
 as `custom_keys_only` in `entries.toml`.
 
+The next two rows, **Select all entries** and **Hide all entries**, show or
+hide every entry listed in settings, including entries outside the current
+search. Click either row or select it and press `space` / `enter`. Each action
+saves the whole change at once, preserving aliases and the **Only custom
+keybindings** option. Settings remain accessible when all entries are hidden,
+so **Select all entries** can always restore them.
+
 Changes are saved immediately in `entries.toml` beside the palette's
 `config.toml`, keyed by each entry's ID. Hidden entries are excluded from
 every normal scope, and aliases remain searchable by their original names.
