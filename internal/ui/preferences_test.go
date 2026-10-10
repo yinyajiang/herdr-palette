@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -427,5 +428,72 @@ func TestCustomKeybindingsOptionSaveFailureKeepsItsPreviousState(t *testing.T) {
 	m.toggleEntry()
 	if m.preferences.CustomKeysOnly || m.failure == "" || !strings.HasPrefix(m.ranked[0].Entry.Title, "[ ] ") {
 		t.Fatal("a failed save enabled the option or hid its error")
+	}
+}
+
+func TestTogglingScrolledSettingsKeepsTheViewportAndRowOrder(t *testing.T) {
+	m := preferenceModel(t)
+	m.source.Commands = nil
+	for i := range 70 {
+		m.source.Commands = append(m.source.Commands, palette.Entry{
+			ID: fmt.Sprintf("item:%02d", i), Title: fmt.Sprintf("Item %02d", i), Type: "Herdr",
+		})
+	}
+	m.rank()
+	m = manage(t, m)
+	m.move(40)
+	m.move(-6)
+	offset, cursor := m.offset, m.cursor
+	id := m.ranked[cursor].Entry.ID
+	if offset == 0 || cursor <= offset || cursor >= offset+m.rows()-1 {
+		t.Fatal("test must toggle a row inside a scrolled viewport")
+	}
+	order := make([]string, len(m.ranked))
+	for i, row := range m.ranked {
+		order[i] = row.Entry.ID
+	}
+	for _, mouse := range []bool{true, false} {
+		var cmd tea.Cmd
+		if mouse {
+			m, cmd = click(t, m, 4, headerRows+cursor-offset)
+		} else {
+			m, cmd = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+		}
+		if cmd != nil || m.offset != offset || m.cursor != cursor || m.ranked[m.cursor].Entry.ID != id {
+			t.Fatalf("toggle moved the viewport/selection: offset=%d cursor=%d, want %d/%d", m.offset, m.cursor, offset, cursor)
+		}
+		for i, row := range m.ranked {
+			if row.Entry.ID != order[i] {
+				t.Fatalf("visibility changed the order at row %d: %s, want %s", i, row.Entry.ID, order[i])
+			}
+		}
+		m.setOpen(m.source.Session)
+		if m.offset != offset || m.cursor != cursor {
+			t.Fatal("session refresh moved the settings after toggling")
+		}
+	}
+}
+
+func TestSettingsCheckboxesKeepSearchHighlightsOnTheMatchedText(t *testing.T) {
+	m := preferenceModel(t)
+	m.source.Commands = []palette.Entry{{ID: "item", Title: "Item 03", Type: "Herdr"}}
+	m.rank()
+	m = manage(t, m)
+	m, _ = send(t, m, tea.PasteMsg{Content: "herdr item03"})
+	selectEntry(t, &m, "item")
+	for range 2 {
+		row := m.ranked[m.cursor]
+		name := []rune(row.Entry.Name())
+		var matched []rune
+		for _, position := range row.Matched {
+			if position < 0 || position >= len(name) {
+				t.Fatalf("match position %d is outside %q", position, string(name))
+			}
+			matched = append(matched, name[position])
+		}
+		if !strings.EqualFold(string(matched), "herdritem03") {
+			t.Fatalf("checkbox shifted search highlighting: %q in %q", string(matched), string(name))
+		}
+		m.toggleEntry()
 	}
 }

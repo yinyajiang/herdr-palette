@@ -123,11 +123,6 @@ func (m model) displayEntries(entries []palette.Entry) []palette.Entry {
 			entry.Search = strings.TrimSpace(entry.Search + " " + original)
 		}
 		if m.editor != nil {
-			check := "[x] "
-			if preference.Hidden {
-				check = "[ ] "
-			}
-			entry.Title = check + entry.Title
 			entry.Detail = original
 			entry.Status = ""
 		}
@@ -136,15 +131,35 @@ func (m model) displayEntries(entries []palette.Entry) []palette.Entry {
 	return rows
 }
 
+// visibility markers are presentation only: including them in ranking would
+// move a row to the top as soon as its checkbox changed from [x] to [ ].
+func (m model) markVisibility(row palette.Ranked) palette.Ranked {
+	check := "[x] "
+	if m.preferences.Entries[row.Entry.ID].Hidden {
+		check = "[ ] "
+	}
+	namespace := len([]rune(row.Entry.Namespace()))
+	for i, position := range row.Matched {
+		if position >= namespace {
+			row.Matched[i] += len([]rune(check))
+		}
+	}
+	row.Entry.Title = check + row.Entry.Title
+	return row
+}
+
 func (m *model) rankKeeping(id string) {
+	offset, cursor := m.offset, m.cursor
 	m.rank()
+	m.cursor = clamp(cursor, len(m.ranked))
 	for i, row := range m.ranked {
 		if row.Entry.ID == id {
 			m.cursor = i
-			m.reveal()
 			break
 		}
 	}
+	m.offset = min(offset, max(len(m.lines)-m.rows(), 0))
+	m.reveal()
 }
 
 func (m *model) savePreference(id string, preference settings.EntryPreference) bool {

@@ -974,6 +974,9 @@ func (m *model) rank() {
 
 	m.ranked = palette.Rank(entries, text, m.recent)
 	if m.editor != nil {
+		for i, row := range m.ranked {
+			m.ranked[i] = m.markVisibility(row)
+		}
 		// Keep the global display option first and available even when the
 		// entry search has no matches.
 		m.ranked = append([]palette.Ranked{m.customKeysOnlyRow()}, m.ranked...)
