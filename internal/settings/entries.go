@@ -19,27 +19,26 @@ type EntryPreference struct {
 	Alias  string `toml:"alias,omitempty"`
 }
 
-type EntryPreferences map[string]EntryPreference
-
-type entryFile struct {
-	Entries EntryPreferences `toml:"entries"`
+type EntryPreferences struct {
+	CustomKeysOnly bool                       `toml:"custom_keys_only,omitempty"`
+	Entries        map[string]EntryPreference `toml:"entries"`
 }
 
 // LoadEntries treats a missing file as defaults. Other errors are returned so
 // the editor cannot accidentally overwrite unreadable preferences.
 func LoadEntries(env *plugin.Env) (EntryPreferences, error) {
 	if env == nil || env.ConfigPath() == "" {
-		return make(EntryPreferences), nil
+		return EntryPreferences{Entries: make(map[string]EntryPreference)}, nil
 	}
-	var file entryFile
+	var file EntryPreferences
 	_, err := toml.DecodeFile(env.ConfigPath(EntriesFile), &file)
 	if errors.Is(err, os.ErrNotExist) {
 		err = nil
 	}
 	if file.Entries == nil {
-		file.Entries = make(EntryPreferences)
+		file.Entries = make(map[string]EntryPreference)
 	}
-	return file.Entries, err
+	return file, err
 }
 
 // SaveEntries replaces the file only after a complete document is written.
@@ -56,7 +55,7 @@ func SaveEntries(env *plugin.Env, preferences EntryPreferences) error {
 		return err
 	}
 	defer func() { _ = os.Remove(file.Name()) }()
-	err = toml.NewEncoder(file).Encode(entryFile{Entries: preferences})
+	err = toml.NewEncoder(file).Encode(preferences)
 	if err == nil {
 		err = file.Sync()
 	}

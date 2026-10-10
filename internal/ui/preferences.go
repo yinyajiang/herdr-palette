@@ -22,6 +22,23 @@ type entryEditor struct {
 	aliasTitle string
 }
 
+const customKeysOnlyID = "settings:custom-keybindings-only"
+
+func (m model) customKeysOnlyRow() palette.Ranked {
+	check := "[ ] "
+	if m.preferences.CustomKeysOnly {
+		check = "[x] "
+	}
+	return palette.Ranked{
+		Entry:  palette.Entry{ID: customKeysOnlyID, Title: check + "Only custom keybindings", Type: "Settings"},
+		Detail: "Hide built-in commands and entries without custom shortcuts",
+	}
+}
+
+func (m model) onCustomKeysOnly() bool {
+	return m.cursor < len(m.ranked) && m.ranked[m.cursor].Entry.ID == customKeysOnlyID
+}
+
 // entryControl sits above the query so it never takes room from search text
 // or a script's argument fields. Drawing and mouse hit testing share its bounds.
 func (m model) entryControl() (string, extent, bool) {
@@ -92,8 +109,12 @@ func (m *model) manageEntries() {
 func (m model) displayEntries(entries []palette.Entry) []palette.Entry {
 	rows := make([]palette.Entry, 0, len(entries))
 	for _, entry := range entries {
-		preference := m.preferences[entry.ID]
+		preference := m.preferences.Entries[entry.ID]
 		if preference.Hidden && m.editor == nil {
+			continue
+		}
+		if m.editor == nil && m.preferences.CustomKeysOnly &&
+			((entry.Kind != palette.KindCustom && entry.Kind != palette.KindPlugin) || strings.TrimSpace(entry.Key) == "") {
 			continue
 		}
 		original := entry.Title
@@ -127,15 +148,20 @@ func (m *model) rankKeeping(id string) {
 }
 
 func (m *model) savePreference(id string, preference settings.EntryPreference) bool {
+	next := m.preferences
+	next.Entries = maps.Clone(m.preferences.Entries)
+	if preference == (settings.EntryPreference{}) {
+		delete(next.Entries, id)
+	} else {
+		next.Entries[id] = preference
+	}
+	return m.savePreferences(next)
+}
+
+func (m *model) savePreferences(next settings.EntryPreferences) bool {
 	if m.preferencesErr != nil {
 		m.failure = "cannot save entries: " + m.preferencesErr.Error()
 		return false
-	}
-	next := maps.Clone(m.preferences)
-	if preference == (settings.EntryPreference{}) {
-		delete(next, id)
-	} else {
-		next[id] = preference
 	}
 	if err := settings.SaveEntries(m.env, next); err != nil {
 		m.failure = "cannot save entries: " + err.Error()
@@ -151,7 +177,15 @@ func (m *model) toggleEntry() {
 		return
 	}
 	id := m.ranked[m.cursor].Entry.ID
-	preference := m.preferences[id]
+	if id == customKeysOnlyID {
+		next := m.preferences
+		next.CustomKeysOnly = !next.CustomKeysOnly
+		if m.savePreferences(next) {
+			m.rankKeeping(id)
+		}
+		return
+	}
+	preference := m.preferences.Entries[id]
 	preference.Hidden = !preference.Hidden
 	if m.savePreference(id, preference) {
 		m.rankKeeping(id)
@@ -168,7 +202,7 @@ func (m *model) editAlias() {
 			editor := *m.editor
 			editor.filter, editor.aliasID, editor.aliasTitle = m.query.Value(), id, entry.Title
 			m.editor = &editor
-			m.query.SetValue(m.preferences[id].Alias)
+			m.query.SetValue(m.preferences.Entries[id].Alias)
 			m.query.CursorEnd()
 			m.query.Placeholder = entry.Title + " (empty restores original)"
 			m.failure, m.notice = "", ""
@@ -180,7 +214,7 @@ func (m *model) editAlias() {
 func (m *model) finishAlias(save bool) {
 	editor := *m.editor
 	if save {
-		preference := m.preferences[editor.aliasID]
+		preference := m.preferences.Entries[editor.aliasID]
 		preference.Alias = strings.TrimSpace(strings.Map(printable, m.query.Value()))
 		if !m.savePreference(editor.aliasID, preference) {
 			return
@@ -212,7 +246,13 @@ func (m model) keyEntries(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.manageEntries()
 	case "space":
 		m.toggleEntry()
-	case "enter", "ctrl+r":
+	case "enter":
+		if m.onCustomKeysOnly() {
+			m.toggleEntry()
+		} else {
+			m.editAlias()
+		}
+	case "ctrl+r":
 		m.editAlias()
 	case "up", "ctrl+p":
 		m.step(-1)
@@ -239,7 +279,10 @@ func (m model) editAliasInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) entriesFooter() string {
 	hints := []hint{{"space/click", "show/hide"}, {spelling.name("enter"), "alias"}, {spelling.name("esc"), "back"}}
-	left := fmt.Sprintf(" %d entries · saved automatically", len(m.ranked))
+	left := fmt.Sprintf(" %d entries · saved automatically", max(len(m.ranked)-1, 0))
+	if m.onCustomKeysOnly() {
+		hints = []hint{{"space/click", "toggle"}, {spelling.name("enter"), "toggle"}, {spelling.name("esc"), "back"}}
+	}
 	if m.editor.aliasID != "" {
 		hints = []hint{{spelling.name("enter"), "save"}, {spelling.name("esc"), "cancel"}}
 		left = " " + m.editor.aliasTitle + " · empty restores original"

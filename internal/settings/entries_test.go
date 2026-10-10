@@ -13,10 +13,13 @@ func TestEntryPreferencesRoundTrip(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "config")
 	env := plugintest.Env(plugintest.ConfigDir(dir))
 	preferences := EntryPreferences{
-		"plugin:herdr.tools/open": {Hidden: true, Alias: "我的工具 \"开发\""},
-		"script:/some path/run":   {Alias: "Run it"},
+		CustomKeysOnly: true,
+		Entries: map[string]EntryPreference{
+			"plugin:herdr.tools/open": {Hidden: true, Alias: "我的工具 \"开发\""},
+			"script:/some path/run":   {Alias: "Run it"},
+		},
 	}
-	if got, err := LoadEntries(env); err != nil || len(got) != 0 {
+	if got, err := LoadEntries(env); err != nil || len(got.Entries) != 0 || got.CustomKeysOnly {
 		t.Fatalf("missing preferences = %v, %v", got, err)
 	}
 	if err := SaveEntries(env, preferences); err != nil {
@@ -26,7 +29,7 @@ func TestEntryPreferencesRoundTrip(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, preferences) {
 		t.Fatalf("reloaded = %v, %v, want %v", got, err, preferences)
 	}
-	delete(preferences, "script:/some path/run")
+	delete(preferences.Entries, "script:/some path/run")
 	if err := SaveEntries(env, preferences); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +50,7 @@ func TestEntryPreferencesDoNotChangeConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, File), []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveEntries(env, EntryPreferences{"one": {Hidden: true}}); err != nil {
+	if err := SaveEntries(env, EntryPreferences{Entries: map[string]EntryPreference{"one": {Hidden: true}}}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(filepath.Join(dir, File)); err != nil || string(got) != config {
@@ -73,11 +76,32 @@ func TestEntryPreferencesReportWriteFailure(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, EntriesFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveEntries(env, EntryPreferences{"one": {Hidden: true}}); err == nil {
+	if err := SaveEntries(env, EntryPreferences{Entries: map[string]EntryPreference{"one": {Hidden: true}}}); err == nil {
 		t.Fatal("failed replacement reported success")
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil || len(files) != 1 {
 		t.Fatalf("temporary files left behind: %v, %v", files, err)
+	}
+}
+
+func TestExistingEntryPreferencesKeepAliasesAndVisibility(t *testing.T) {
+	dir := t.TempDir()
+	env := plugintest.Env(plugintest.ConfigDir(dir))
+	old := "[entries.\"plugin:tools/open\"]\nhidden = true\nalias = \"我的工具\"\n"
+	if err := os.WriteFile(filepath.Join(dir, EntriesFile), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preferences, err := LoadEntries(env)
+	if err != nil || preferences.CustomKeysOnly || preferences.Entries["plugin:tools/open"] != (EntryPreference{Hidden: true, Alias: "我的工具"}) {
+		t.Fatalf("old preferences did not load with the option off: %+v, %v", preferences, err)
+	}
+	preferences.CustomKeysOnly = true
+	if err := SaveEntries(env, preferences); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadEntries(env)
+	if err != nil || !reflect.DeepEqual(loaded, preferences) {
+		t.Fatalf("global option lost the old settings: %+v, %v", loaded, err)
 	}
 }

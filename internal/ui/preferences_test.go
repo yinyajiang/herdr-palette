@@ -61,7 +61,7 @@ func TestHiddenEntriesCanBeRestoredAndPersistAcrossPopups(t *testing.T) {
 	m = manage(t, m)
 	selectEntry(t, &m, "a")
 	m, _ = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
-	if !m.preferences["a"].Hidden || !strings.HasPrefix(m.ranked[m.cursor].Entry.Title, "[ ] ") {
+	if !m.preferences.Entries["a"].Hidden || !strings.HasPrefix(m.ranked[m.cursor].Entry.Title, "[ ] ") {
 		t.Fatal("hidden row was not marked or disappeared from settings")
 	}
 	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
@@ -69,7 +69,7 @@ func TestHiddenEntriesCanBeRestoredAndPersistAcrossPopups(t *testing.T) {
 		t.Fatalf("return lost the scope/filter or retained the hidden row: %+v", m.ranked)
 	}
 	reopened := newModel(m.ctx, m.env, m.invocation, m.source, nil, m.colours, Toggle{})
-	if len(reopened.ranked) != 2 || !reopened.preferences["a"].Hidden {
+	if len(reopened.ranked) != 2 || !reopened.preferences.Entries["a"].Hidden {
 		t.Fatal("hidden state was not loaded in the next popup")
 	}
 	m = manage(t, reopened)
@@ -77,7 +77,7 @@ func TestHiddenEntriesCanBeRestoredAndPersistAcrossPopups(t *testing.T) {
 	m, _ = send(t, m, tea.MouseClickMsg{X: 4, Y: headerRows + m.lineOf(m.cursor) - m.offset, Button: tea.MouseLeft})
 	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	selectEntry(t, &m, "a")
-	if m.preferences["a"].Hidden || m.ranked[m.cursor].Entry.Title != "split pane right" {
+	if m.preferences.Entries["a"].Hidden || m.ranked[m.cursor].Entry.Title != "split pane right" {
 		t.Fatal("click did not restore the hidden entry")
 	}
 }
@@ -102,7 +102,7 @@ func TestAliasesSaveCancelResetAndKeepOriginalSearch(t *testing.T) {
 		t.Fatal("original search/name was lost")
 	}
 	loaded, err := settings.LoadEntries(m.env)
-	if err != nil || loaded["a"].Alias != "右侧分屏" {
+	if err != nil || loaded.Entries["a"].Alias != "右侧分屏" {
 		t.Fatalf("alias was not saved: %+v, %v", loaded, err)
 	}
 	m = manage(t, m)
@@ -110,7 +110,7 @@ func TestAliasesSaveCancelResetAndKeepOriginalSearch(t *testing.T) {
 	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.query.SetValue("cancelled")
 	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if m.preferences["a"].Alias != "右侧分屏" || m.editor == nil || m.editor.aliasID != "" {
+	if m.preferences.Entries["a"].Alias != "右侧分屏" || m.editor == nil || m.editor.aliasID != "" {
 		t.Fatal("esc saved an alias or closed the settings list")
 	}
 	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -170,7 +170,7 @@ func TestSessionRefreshKeepsPreferencesAndAliasEditing(t *testing.T) {
 		t.Fatal("session refresh interrupted alias editing")
 	}
 	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.preferences["pane:1"].Alias != "Editing now" || !m.preferences["pane:1"].Hidden {
+	if m.preferences.Entries["pane:1"].Alias != "Editing now" || !m.preferences.Entries["pane:1"].Hidden {
 		t.Fatal("alias save lost the hidden preference")
 	}
 	// Target rows share a command ID; a command alias must not rename them.
@@ -194,7 +194,7 @@ func TestPreferenceLoadAndSaveFailuresKeepExistingSettings(t *testing.T) {
 	m = manage(t, m)
 	selectEntry(t, &m, "a")
 	m.toggleEntry()
-	if m.failure == "" || m.preferences["a"].Hidden {
+	if m.failure == "" || m.preferences.Entries["a"].Hidden {
 		t.Fatal("malformed preferences were silently replaced")
 	}
 	if content, err := os.ReadFile(path); err != nil || string(content) != "[entries" {
@@ -208,7 +208,7 @@ func TestPreferenceLoadAndSaveFailuresKeepExistingSettings(t *testing.T) {
 	}
 	m.preferencesErr = nil
 	m.toggleEntry()
-	if m.failure == "" || m.preferences["a"].Hidden {
+	if m.failure == "" || m.preferences.Entries["a"].Hidden {
 		t.Fatal("failed write changed the in-memory preference")
 	}
 	files, err := filepath.Glob(m.env.ConfigPath(".entries-*"))
@@ -275,7 +275,7 @@ func TestEntrySettingsButtonBoundsHoverAndReturn(t *testing.T) {
 		t.Fatal("alias editor has no cancel button")
 	}
 	m, cmd := click(t, m, area.start+1, 0)
-	if cmd != nil || m.editor == nil || m.editor.aliasID != "" || m.preferences["a"].Alias != "" {
+	if cmd != nil || m.editor == nil || m.editor.aliasID != "" || m.preferences.Entries["a"].Alias != "" {
 		t.Fatal("cancel button did not discard the alias and return to settings")
 	}
 	label, area, _ = m.entryControl()
@@ -325,5 +325,107 @@ func TestCtrlSDoesNotOpenOrCloseEntrySettings(t *testing.T) {
 	m, _ = send(t, m, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if m.editor == nil {
 		t.Fatal("ctrl+s still closes settings")
+	}
+}
+
+func TestOnlyCustomKeybindingsFiltersScopesAndPersistsWithoutLosingAliases(t *testing.T) {
+	m := preferenceModel(t)
+	// A rebound built-in is still built-in; only custom commands and plugin
+	// actions with their own configured shortcut belong in this mode.
+	m.source.Commands[0].Key = "prefix+a"
+	m.source.Commands[1].Key = "prefix+j"
+	m.source.Commands = append(m.source.Commands,
+		palette.Entry{ID: "plugin:bound", Title: "My tool", Kind: palette.KindPlugin, Key: "prefix+t"},
+		palette.Entry{ID: "plugin:unbound", Title: "Other tool", Kind: palette.KindPlugin},
+		palette.Entry{ID: "script:unbound", Title: "Script", Kind: palette.KindCustom},
+	)
+	m.source.Session.Entries = []palette.Entry{{ID: "pane:1", Title: "A pane", Kind: palette.KindPane}}
+	m.rank()
+	if !m.savePreference("b", settings.EntryPreference{Alias: "我的命令"}) {
+		t.Fatal(m.failure)
+	}
+	m = manage(t, m)
+	if m.ranked[0].Entry.ID != customKeysOnlyID || m.preferences.CustomKeysOnly {
+		t.Fatal("global option is not first or is enabled by default")
+	}
+	selectEntry(t, &m, customKeysOnlyID)
+	m, cmd := send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || !m.preferences.CustomKeysOnly || m.editor.aliasID != "" {
+		t.Fatal("enter did not toggle the global option")
+	}
+	// The filter never removes entries from the management list.
+	if len(m.ranked) != len(m.source.All())+1 {
+		t.Fatal("global option filtered its own settings list")
+	}
+	if !m.savePreference("a", settings.EntryPreference{Hidden: true}) {
+		t.Fatal(m.failure)
+	}
+	if !m.preferences.CustomKeysOnly {
+		t.Fatal("editing an entry reset the global option")
+	}
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if len(m.ranked) != 2 {
+		t.Fatalf("custom mode retained non-custom or unbound entries: %+v", m.ranked)
+	}
+	for _, row := range m.ranked {
+		if row.Entry.ID != "b" && row.Entry.ID != "plugin:bound" {
+			t.Fatalf("unexpected row: %+v", row.Entry)
+		}
+	}
+	selectEntry(t, &m, "b")
+	if m.ranked[m.cursor].Entry.Title != "我的命令" {
+		t.Fatal("global option lost the alias")
+	}
+	for _, scope := range []palette.Scope{palette.ScopeHerdr, palette.ScopePanes, palette.ScopeTabs, palette.ScopeWorkspaces} {
+		m.enter(scope)
+		if len(m.ranked) != 0 {
+			t.Fatalf("custom mode leaked entries in %s", scope.Name)
+		}
+	}
+	m.enter(palette.ScopePlugins)
+	if len(m.ranked) != 1 || m.ranked[0].Entry.ID != "plugin:bound" {
+		t.Fatal("plugin scope lost the configured plugin shortcut")
+	}
+	reopened := newModel(m.ctx, m.env, m.invocation, m.source, nil, m.colours, Toggle{})
+	if !reopened.preferences.CustomKeysOnly || len(reopened.ranked) != 2 || reopened.preferences.Entries["b"].Alias != "我的命令" {
+		t.Fatal("reopening lost the global option or existing entry preferences")
+	}
+	m = manage(t, reopened)
+	m = typeQuery(t, m, "unmatchedquery")
+	if len(m.ranked) != 1 || m.ranked[0].Entry.ID != customKeysOnlyID {
+		t.Fatal("search hid the global display option")
+	}
+	m, _ = click(t, m, 4, headerRows)
+	if m.preferences.CustomKeysOnly {
+		t.Fatal("click did not disable the global option")
+	}
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	selectEntry(t, &m, "script:unbound")
+	selectEntry(t, &m, "pane:1")
+	if !m.preferences.Entries["a"].Hidden {
+		t.Fatal("turning the option off cleared individual visibility settings")
+	}
+}
+
+func TestCustomKeybindingsOnlyLeavesCommandTargetsAvailable(t *testing.T) {
+	m := preferenceModel(t)
+	m.preferences.CustomKeysOnly = true
+	m.choosing = &chooser{}
+	m.targets = []palette.Entry{{ID: "plugin:bound", Title: "A target"}}
+	m.rank()
+	if len(m.ranked) != 1 || m.ranked[0].Entry.Title != "A target" {
+		t.Fatal("the display option filtered a custom command's targets")
+	}
+}
+
+func TestCustomKeybindingsOptionSaveFailureKeepsItsPreviousState(t *testing.T) {
+	m := manage(t, preferenceModel(t))
+	selectEntry(t, &m, customKeysOnlyID)
+	if err := os.Mkdir(m.env.ConfigPath(settings.EntriesFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.toggleEntry()
+	if m.preferences.CustomKeysOnly || m.failure == "" || !strings.HasPrefix(m.ranked[0].Entry.Title, "[ ] ") {
+		t.Fatal("a failed save enabled the option or hid its error")
 	}
 }

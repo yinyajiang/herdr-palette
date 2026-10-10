@@ -109,6 +109,16 @@ Click **Back to palette** or press `esc` from the settings list to return.
 While editing an alias, **Cancel alias** cancels the edit and returns to the
 settings list.
 
+The first row, **Only custom keybindings**, is a global display option.
+Click it or select it and press `space` / `enter` to toggle it. When enabled,
+normal lists show only configured custom commands and plugin actions with a
+custom shortcut. Built-in Herdr commands, scripts without a shortcut, and
+pane, agent, tab and workspace rows are filtered out. The settings list still
+contains every entry, so the option and individual visibility preferences
+can always be changed. Turning it off restores the full list, respecting each
+entry's hidden state. The option defaults to off and is saved automatically
+as `custom_keys_only` in `entries.toml`.
+
 Changes are saved immediately in `entries.toml` beside the palette's
 `config.toml`, keyed by each entry's ID. Hidden entries are excluded from
 every normal scope, and aliases remain searchable by their original names.

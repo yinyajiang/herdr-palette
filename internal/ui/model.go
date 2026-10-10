@@ -973,6 +973,11 @@ func (m *model) rank() {
 	entries, text := m.candidates(), m.query.Value()
 
 	m.ranked = palette.Rank(entries, text, m.recent)
+	if m.editor != nil {
+		// Keep the global display option first and available even when the
+		// entry search has no matches.
+		m.ranked = append([]palette.Ranked{m.customKeysOnlyRow()}, m.ranked...)
+	}
 	// A list nobody has searched yet is laid out in groups; a query's matches
 	// are one list in the order they matched, which the groups would break.
 	if strings.TrimSpace(text) == "" && m.choosing == nil && m.editor == nil {
