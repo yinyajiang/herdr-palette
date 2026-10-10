@@ -102,7 +102,12 @@ appear and how they are named. The button highlights when hovered and stays
 above the search line, leaving the query and script fields their full width.
 The settings list includes hidden entries, selection-only actions,
 tabs and workspaces. Type to search, use `up` / `down` to select a row, and
-press `space` or click a row to toggle its `[x]` (shown) / `[ ]` (hidden) state.
+press `space` or click a row to cycle its visibility state:
+`[ ]` hidden → `[x]` normal display → `[!]` force display → `[ ]` hidden.
+The footer names the selected row's state. **Force display** overrides the
+**Only custom keybindings** filter, so a built-in command or an entry without
+a custom shortcut can appear while that filter is enabled. States and aliases
+are saved per entry; existing preferences keep their previous visibility.
 Press `enter` or `ctrl+r` to edit its display alias (remark name), then
 `enter` to save or `esc` to cancel. An empty alias restores the original name.
 Click **Back to palette** or press `esc` from the settings list to return.
@@ -111,9 +116,10 @@ settings list.
 
 The first row, **Only custom keybindings**, is a global display option.
 Click it or select it and press `space` / `enter` to toggle it. When enabled,
-normal lists show only configured custom commands and plugin actions with a
-custom shortcut. Built-in Herdr commands, scripts without a shortcut, and
-pane, agent, tab and workspace rows are filtered out. The settings list still
+normal lists show configured custom commands and plugin actions with a
+custom shortcut, plus entries marked `[!]` for force display. Other built-in
+Herdr commands, scripts without a shortcut, and pane, agent, tab and workspace
+rows are filtered out. The settings list still
 contains every entry, so the option and individual visibility preferences
 can always be changed. Turning it off restores the full list, respecting each
 entry's hidden state. The option defaults to off and is saved automatically
@@ -123,12 +129,16 @@ The next two rows, **Select all entries** and **Hide all entries**, show or
 hide every entry listed in settings, including entries outside the current
 search. Click either row or select it and press `space` / `enter`. Each action
 saves the whole change at once, preserving aliases and the **Only custom
-keybindings** option. Settings remain accessible when all entries are hidden,
+keybindings** option. **Select all entries** resets entries to normal display;
+**Hide all entries** resets them to hidden. Both clear force display states.
+Settings remain accessible when all entries are hidden,
 so **Select all entries** can always restore them.
 
 Changes are saved immediately in `entries.toml` beside the palette's
 `config.toml`, keyed by each entry's ID. Hidden entries are excluded from
 every normal scope, and aliases remain searchable by their original names.
+Force display is stored as `force_show = true`; it changes visibility within
+the active scope and does not override an action's context requirements.
 Aliases only change the palette's display; commands and actual pane, tab or
 workspace names keep their existing behavior. Preferences for open panes,
 tabs and workspaces belong to that object's ID, so newly created objects

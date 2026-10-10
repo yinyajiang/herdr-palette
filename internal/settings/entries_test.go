@@ -17,6 +17,7 @@ func TestEntryPreferencesRoundTrip(t *testing.T) {
 		Entries: map[string]EntryPreference{
 			"plugin:herdr.tools/open": {Hidden: true, Alias: "我的工具 \"开发\""},
 			"script:/some path/run":   {Alias: "Run it"},
+			"herdr:split":             {ForceShow: true, Alias: "分屏"},
 		},
 	}
 	if got, err := LoadEntries(env); err != nil || len(got.Entries) != 0 || got.CustomKeysOnly {

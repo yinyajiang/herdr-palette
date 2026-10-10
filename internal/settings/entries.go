@@ -15,8 +15,9 @@ const EntriesFile = "entries.toml"
 
 // EntryPreference is keyed by an entry's stable ID, never its display name.
 type EntryPreference struct {
-	Hidden bool   `toml:"hidden,omitempty"`
-	Alias  string `toml:"alias,omitempty"`
+	Hidden    bool   `toml:"hidden,omitempty"`
+	ForceShow bool   `toml:"force_show,omitempty"`
+	Alias     string `toml:"alias,omitempty"`
 }
 
 type EntryPreferences struct {

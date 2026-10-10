@@ -131,12 +131,14 @@ func (m model) displayEntries(entries []palette.Entry) []palette.Entry {
 	rows := make([]palette.Entry, 0, len(entries))
 	for _, entry := range entries {
 		preference := m.preferences.Entries[entry.ID]
-		if preference.Hidden && m.editor == nil {
-			continue
-		}
-		if m.editor == nil && m.preferences.CustomKeysOnly &&
-			((entry.Kind != palette.KindCustom && entry.Kind != palette.KindPlugin) || strings.TrimSpace(entry.Key) == "") {
-			continue
+		if m.editor == nil && !preference.ForceShow {
+			if preference.Hidden {
+				continue
+			}
+			if m.preferences.CustomKeysOnly &&
+				((entry.Kind != palette.KindCustom && entry.Kind != palette.KindPlugin) || strings.TrimSpace(entry.Key) == "") {
+				continue
+			}
 		}
 		original := entry.Title
 		if preference.Alias != "" {
@@ -152,13 +154,21 @@ func (m model) displayEntries(entries []palette.Entry) []palette.Entry {
 	return rows
 }
 
-// visibility markers are presentation only: including them in ranking would
-// move a row to the top as soon as its checkbox changed from [x] to [ ].
-func (m model) markVisibility(row palette.Ranked) palette.Ranked {
-	check := "[x] "
-	if m.preferences.Entries[row.Entry.ID].Hidden {
-		check = "[ ] "
+func visibility(preference settings.EntryPreference) (mark, state string) {
+	switch {
+	case preference.ForceShow:
+		return "[!] ", "force show"
+	case preference.Hidden:
+		return "[ ] ", "hidden"
+	default:
+		return "[x] ", "normal"
 	}
+}
+
+// Visibility markers are presentation only: including them in ranking would
+// move a row when its checkbox changed state.
+func (m model) markVisibility(row palette.Ranked) palette.Ranked {
+	check, _ := visibility(m.preferences.Entries[row.Entry.ID])
 	namespace := len([]rune(row.Entry.Namespace()))
 	for i, position := range row.Matched {
 		if position >= namespace {
@@ -226,7 +236,14 @@ func (m *model) toggleEntry() {
 		return
 	}
 	preference := m.preferences.Entries[id]
-	preference.Hidden = !preference.Hidden
+	switch {
+	case preference.ForceShow:
+		preference.ForceShow, preference.Hidden = false, true
+	case preference.Hidden:
+		preference.ForceShow, preference.Hidden = false, false
+	default:
+		preference.ForceShow, preference.Hidden = true, false
+	}
 	if m.savePreference(id, preference) {
 		m.rankKeeping(id)
 	}
@@ -242,6 +259,7 @@ func (m *model) setAllHidden(hidden bool, selected string) {
 	for _, entry := range entries {
 		preference := next.Entries[entry.ID]
 		preference.Hidden = hidden
+		preference.ForceShow = false
 		if preference == (settings.EntryPreference{}) {
 			delete(next.Entries, entry.ID)
 		} else {
@@ -339,7 +357,7 @@ func (m model) editAliasInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) entriesFooter() string {
-	hints := []hint{{"space/click", "show/hide"}, {spelling.name("enter"), "alias"}, {spelling.name("esc"), "back"}}
+	hints := []hint{{"space/click", "state"}, {spelling.name("enter"), "alias"}, {spelling.name("esc"), "back"}}
 	left := fmt.Sprintf(" %d entries · saved automatically", max(len(m.ranked)-settingsControls, 0))
 	if m.onSettingsControl() {
 		act := "apply"
@@ -347,6 +365,9 @@ func (m model) entriesFooter() string {
 			act = "toggle"
 		}
 		hints = []hint{{"space/click", act}, {spelling.name("enter"), act}, {spelling.name("esc"), "back"}}
+	} else if m.cursor < len(m.ranked) {
+		mark, state := visibility(m.preferences.Entries[m.ranked[m.cursor].Entry.ID])
+		left = " " + mark + state + " · saved automatically"
 	}
 	if m.editor.aliasID != "" {
 		hints = []hint{{spelling.name("enter"), "save"}, {spelling.name("esc"), "cancel"}}

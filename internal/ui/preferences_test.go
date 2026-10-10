@@ -62,6 +62,7 @@ func TestHiddenEntriesCanBeRestoredAndPersistAcrossPopups(t *testing.T) {
 	m = manage(t, m)
 	selectEntry(t, &m, "a")
 	m, _ = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+	m, _ = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
 	if !m.preferences.Entries["a"].Hidden || !strings.HasPrefix(m.ranked[m.cursor].Entry.Title, "[ ] ") {
 		t.Fatal("hidden row was not marked or disappeared from settings")
 	}
@@ -452,7 +453,7 @@ func TestTogglingScrolledSettingsKeepsTheViewportAndRowOrder(t *testing.T) {
 	for i, row := range m.ranked {
 		order[i] = row.Entry.ID
 	}
-	for _, mouse := range []bool{true, false} {
+	for _, mouse := range []bool{true, false, true} {
 		var cmd tea.Cmd
 		if mouse {
 			m, cmd = click(t, m, 4, headerRows+cursor-offset)
@@ -481,7 +482,7 @@ func TestSettingsCheckboxesKeepSearchHighlightsOnTheMatchedText(t *testing.T) {
 	m = manage(t, m)
 	m, _ = send(t, m, tea.PasteMsg{Content: "herdr item03"})
 	selectEntry(t, &m, "item")
-	for range 2 {
+	for range 3 {
 		row := m.ranked[m.cursor]
 		name := []rune(row.Entry.Name())
 		var matched []rune
@@ -571,5 +572,140 @@ func TestBulkVisibilitySaveFailureKeepsAllPreviousPreferences(t *testing.T) {
 		if m.failure == "" || m.preferences.Entries["a"] != (settings.EntryPreference{Hidden: true, Alias: "Keep this"}) || m.preferences.Entries["b"].Hidden {
 			t.Fatal("failed bulk save partially changed entry preferences")
 		}
+	}
+}
+
+func TestForceShowCyclesAndOverridesCustomOnlyWithoutLosingAliases(t *testing.T) {
+	m := preferenceModel(t)
+	m.source.Commands[1].Key = "prefix+j"
+	m.preferences.CustomKeysOnly = true
+	if !m.savePreference("a", settings.EntryPreference{Hidden: true, Alias: "分屏"}) {
+		t.Fatal(m.failure)
+	}
+	m.rank()
+	m = manage(t, m)
+	selectEntry(t, &m, "a")
+	// Hidden -> normal: an ordinary checked built-in remains filtered out.
+	m, _ = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+	if preference := m.preferences.Entries["a"]; preference.Hidden || preference.ForceShow || preference.Alias != "分屏" {
+		t.Fatal("hidden did not cycle to normal display")
+	}
+	if !strings.HasPrefix(m.ranked[m.cursor].Entry.Title, "[x] ") {
+		t.Fatal("normal display has the wrong checkbox marker")
+	}
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if len(m.ranked) != 1 || m.ranked[0].Entry.ID != "b" {
+		t.Fatal("ordinary visibility overrode the custom-only filter")
+	}
+	m = manage(t, m)
+	selectEntry(t, &m, "a")
+	// Normal -> forced through a mouse click.
+	m, _ = click(t, m, 4, headerRows+m.lineOf(m.cursor)-m.offset)
+	if preference := m.preferences.Entries["a"]; !preference.ForceShow || preference.Hidden {
+		t.Fatal("normal did not cycle to force display")
+	}
+	if !strings.HasPrefix(m.ranked[m.cursor].Entry.Title, "[!] ") || !strings.Contains(m.footer(), "force show") {
+		t.Fatal("force display is not identified in the checkbox and footer")
+	}
+	m.editAlias()
+	m.query.SetValue("Pinned split")
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if len(m.ranked) != 2 {
+		t.Fatal("forced built-in was filtered out")
+	}
+	selectEntry(t, &m, "a")
+	if m.ranked[m.cursor].Entry.Title != "Pinned split" || !m.preferences.CustomKeysOnly {
+		t.Fatal("force display lost the alias or changed the global option")
+	}
+	reopened := newModel(m.ctx, m.env, m.invocation, m.source, nil, m.colours, Toggle{})
+	if len(reopened.ranked) != 2 || !reopened.preferences.Entries["a"].ForceShow || reopened.preferences.Entries["a"].Alias != "Pinned split" {
+		t.Fatal("force display was not persisted")
+	}
+	reopened.enter(palette.ScopeHerdr)
+	if len(reopened.ranked) != 1 || reopened.ranked[0].Entry.ID != "a" {
+		t.Fatal("forced built-in was filtered out of its scope")
+	}
+	m = manage(t, reopened)
+	selectEntry(t, &m, "a")
+	// Forced -> hidden clears the override.
+	m, _ = send(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+	if preference := m.preferences.Entries["a"]; preference.ForceShow || !preference.Hidden || preference.Alias != "Pinned split" {
+		t.Fatal("force display did not cycle back to hidden")
+	}
+	m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if len(m.ranked) != 0 {
+		t.Fatal("hidden built-in kept appearing in its scope")
+	}
+}
+
+func TestForceShowIncludesUnboundEntriesAndKeepsContextRequirements(t *testing.T) {
+	m := preferenceModel(t)
+	m.source.Commands = []palette.Entry{
+		{ID: "script", Title: "Script", Kind: palette.KindCustom},
+		{ID: "plugin", Title: "Plugin", Kind: palette.KindPlugin},
+		{ID: "selection", Title: "Selected text", NeedsSelection: true},
+	}
+	m.source.Session.Entries = []palette.Entry{{ID: "pane", Title: "Pane", Kind: palette.KindPane}}
+	m.preferences.CustomKeysOnly = true
+	for _, id := range []string{"script", "plugin", "selection", "pane"} {
+		// Even inconsistent manually edited hidden/forced flags obey the
+		// force state. Context and scope restrictions still apply normally.
+		if !m.savePreference(id, settings.EntryPreference{Hidden: true, ForceShow: true}) {
+			t.Fatal(m.failure)
+		}
+	}
+	m.rank()
+	if len(m.ranked) != 3 {
+		t.Fatal("force display filtered unbound entries or bypassed a missing selection")
+	}
+	m.enter(palette.ScopePanes)
+	if len(m.ranked) != 1 || m.ranked[0].Entry.ID != "pane" {
+		t.Fatal("force display did not respect the active scope")
+	}
+}
+
+func TestBulkVisibilityResetsForceShowToItsRequestedState(t *testing.T) {
+	m := preferenceModel(t)
+	m.source.Commands[1].Key = "prefix+j"
+	m.preferences.CustomKeysOnly = true
+	for _, action := range []string{selectAllID, hideAllID} {
+		if !m.savePreference("a", settings.EntryPreference{ForceShow: true, Alias: "分屏"}) {
+			t.Fatal(m.failure)
+		}
+		m.rank()
+		m = manage(t, m)
+		selectEntry(t, &m, action)
+		m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		for _, entry := range m.source.All() {
+			preference := m.preferences.Entries[entry.ID]
+			if preference.ForceShow || preference.Hidden != (action == hideAllID) {
+				t.Fatalf("bulk action %s left the wrong state on %s", action, entry.ID)
+			}
+		}
+		if !m.preferences.CustomKeysOnly || m.preferences.Entries["a"].Alias != "分屏" {
+			t.Fatal("bulk action changed the global filter or alias")
+		}
+		m, _ = send(t, m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		if action == selectAllID && (len(m.ranked) != 1 || m.ranked[0].Entry.ID != "b") {
+			t.Fatal("select all forced a built-in through the global filter")
+		}
+		if action == hideAllID && len(m.ranked) != 0 {
+			t.Fatal("hide all left a forced entry visible")
+		}
+	}
+}
+
+func TestForceShowSaveFailureKeepsItsPreviousState(t *testing.T) {
+	m := preferenceModel(t)
+	m.preferences.Entries["a"] = settings.EntryPreference{ForceShow: true, Alias: "Keep this"}
+	m = manage(t, m)
+	selectEntry(t, &m, "a")
+	if err := os.Mkdir(m.env.ConfigPath(settings.EntriesFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.toggleEntry()
+	if m.failure == "" || m.preferences.Entries["a"] != (settings.EntryPreference{ForceShow: true, Alias: "Keep this"}) || !strings.HasPrefix(m.ranked[m.cursor].Entry.Title, "[!] ") {
+		t.Fatal("failed save cleared the force display state or alias")
 	}
 }
