@@ -22,6 +22,48 @@ type entryEditor struct {
 	aliasTitle string
 }
 
+// entryControl sits above the query so it never takes room from search text
+// or a script's argument fields. Drawing and mouse hit testing share its bounds.
+func (m model) entryControl() (string, extent, bool) {
+	if m.replying != nil {
+		return "", extent{}, false
+	}
+	label, short := "[ Entry settings ]", "[ Settings ]"
+	if m.editor != nil {
+		label, short = "[ Back to palette ]", "[ Back ]"
+		if m.editor.aliasID != "" {
+			label, short = "[ Cancel alias ]", "[ Cancel ]"
+		}
+	}
+	if lipgloss.Width(label) > m.cols()-2 {
+		label = short
+	}
+	if lipgloss.Width(label) > m.cols()-2 {
+		label = "[+]"
+		if m.editor != nil {
+			label = "[<]"
+		}
+	}
+	width := lipgloss.Width(label)
+	enabled := m.editor != nil || m.choosing == nil && m.confirming == nil && !m.pending
+	return label, extent{start: m.cols() - width - 1, width: width}, enabled
+}
+
+func (m model) entryToolbar() string {
+	label, area, enabled := m.entryControl()
+	if label == "" {
+		return strings.Repeat(" ", m.cols())
+	}
+	style := m.styles.plain.faint
+	if enabled {
+		style = m.styles.field.text.Foreground(m.colours.Accent).Bold(true)
+		if m.pointer.Y == 0 && area.contains(m.pointer.X) {
+			style = m.styles.fieldHovered.text.Foreground(m.colours.Accent).Bold(true).Underline(true)
+		}
+	}
+	return strings.Repeat(" ", area.start) + style.Render(label) + " "
+}
+
 func (m *model) manageEntries() {
 	if m.editor != nil {
 		m.query.SetValue(m.editor.query)
@@ -166,7 +208,7 @@ func (m model) keyEntries(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
-	case "ctrl+s", "esc":
+	case "esc":
 		m.manageEntries()
 	case "space":
 		m.toggleEntry()

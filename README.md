@@ -87,7 +87,6 @@ and appear in the footer for the selected row.
 | `tab` | list only the scope the query starts the name of; otherwise move into the fields of a script that takes arguments, or answer the selected agent when it is blocked, and `esc` gives the keyboard back |
 | `ctrl+x` | close the selected pane, tab or workspace without going there |
 | `ctrl+o` | hide or show the side preview on a wide popup |
-| `ctrl+s` | open the entry display settings |
 | `ctrl+u` | clear the query |
 | `backspace` | leave a scope or a list of targets, once the query is empty |
 | `esc` | close the popup, or leave a scope or a list of targets |
@@ -98,13 +97,17 @@ cancels.
 
 ## Configuration
 
-Press `ctrl+s` in the popup to manage which entries appear and how they are
-named. The settings list includes hidden entries, selection-only actions,
+Click **Entry settings** at the top right of the popup to manage which entries
+appear and how they are named. The button highlights when hovered and stays
+above the search line, leaving the query and script fields their full width.
+The settings list includes hidden entries, selection-only actions,
 tabs and workspaces. Type to search, use `up` / `down` to select a row, and
 press `space` or click a row to toggle its `[x]` (shown) / `[ ]` (hidden) state.
 Press `enter` or `ctrl+r` to edit its display alias (remark name), then
 `enter` to save or `esc` to cancel. An empty alias restores the original name.
-Press `esc` or `ctrl+s` from the settings list to return to the palette.
+Click **Back to palette** or press `esc` from the settings list to return.
+While editing an alias, **Cancel alias** cancels the edit and returns to the
+settings list.
 
 Changes are saved immediately in `entries.toml` beside the palette's
 `config.toml`, keyed by each entry's ID. Hidden entries are excluded from

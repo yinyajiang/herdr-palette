@@ -223,7 +223,7 @@ const (
 	// line above the query line, the query line, and the rule under it. A
 	// click's row is counted from there.
 	headerRows = 3
-	// queryRow is the line the query is typed on, under the blank line.
+	// queryRow is the line the query is typed on, under the toolbar.
 	queryRow = 1
 	// margins includes the selection and its blank, the blank and origin
 	// marker at the right edge, and the scrollbar.
@@ -355,10 +355,9 @@ func (m model) header(l layout) string {
 	return truncate(lead+l.line.text, m.cols())
 }
 
-// headerLines are a blank line, which gives the query line room above it,
-// and the query line.
+// headerLines are the toolbar and the query line.
 func (m model) headerLines(l layout) []string {
-	return []string{strings.Repeat(" ", m.cols()), m.header(l)}
+	return []string{m.entryToolbar(), m.header(l)}
 }
 
 // window is the part of the query on show, which is all of it until it
@@ -934,12 +933,6 @@ func (m model) footer() string {
 	// list; the keys are dropped one at a time only once the line is too
 	// narrow to leave the left anything worth reading.
 	keys := m.fitHints(append(append([]hint{act}, more...), back))
-	if m.choosing == nil && !m.pending {
-		withSettings := m.hints(append(append(append([]hint{act}, more...), back), hint{spelling.name("ctrl+s"), "entries"}))
-		if lipgloss.Width(left)+lipgloss.Width(withSettings)+2 <= m.cols() {
-			keys = withSettings
-		}
-	}
 	left = truncate(left, max(m.cols()-lipgloss.Width(keys)-2, 1))
 	return m.spread(m.styles.plain.meta.Render(left), keys)
 }

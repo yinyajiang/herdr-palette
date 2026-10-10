@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"github.com/vika2603/herdr-client/herdr"
 	"github.com/vika2603/herdr-client/plugin/plugintest"
 
@@ -29,9 +30,13 @@ func preferenceModel(t *testing.T) model {
 
 func manage(t *testing.T, m model) model {
 	t.Helper()
-	m, _ = send(t, m, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	_, area, enabled := m.entryControl()
+	if !enabled {
+		t.Fatal("entry settings button is disabled")
+	}
+	m, _ = send(t, m, tea.MouseClickMsg{X: area.start + 1, Y: 0, Button: tea.MouseLeft})
 	if m.editor == nil {
-		t.Fatal("ctrl+s did not open entry settings")
+		t.Fatal("click did not open entry settings")
 	}
 	return m
 }
@@ -213,7 +218,7 @@ func TestPreferenceLoadAndSaveFailuresKeepExistingSettings(t *testing.T) {
 }
 
 func TestEntrySettingsFitThePopup(t *testing.T) {
-	for _, width := range []int{24, 40, 72, 120} {
+	for _, width := range []int{6, 12, 24, 40, 72, 120} {
 		m := manage(t, preferenceModel(t))
 		m.setSize(width, 14)
 		for _, editing := range []bool{false, true} {
@@ -228,5 +233,97 @@ func TestEntrySettingsFitThePopup(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestEntrySettingsButtonBoundsHoverAndReturn(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	m := preferenceModel(t)
+	m.query.SetValue("split")
+	m.rank()
+	label, area, enabled := m.entryControl()
+	if !enabled || label != "[ Entry settings ]" {
+		t.Fatal("settings button is missing")
+	}
+	toolbar := ansi.Strip(strings.Split(m.View().Content, "\n")[0])
+	if toolbar[area.start:area.start+area.width] != label || area.start+area.width != m.cols()-1 {
+		t.Fatalf("button not drawn at its click bounds: %q", toolbar)
+	}
+	for _, x := range []int{area.start, area.start + area.width - 1} {
+		if m.targetAt(m.layout(), x, 0).kind != targetEntrySettings {
+			t.Fatalf("visible button cell %d is not clickable", x)
+		}
+	}
+	for _, x := range []int{area.start - 1, area.start + area.width} {
+		if m.targetAt(m.layout(), x, 0).kind == targetEntrySettings {
+			t.Fatalf("cell outside the button %d is clickable", x)
+		}
+	}
+	plain := m.entryToolbar()
+	m, _ = send(t, m, tea.MouseMotionMsg{X: area.start + 1, Y: 0})
+	if m.entryToolbar() == plain || m.query.Value() != "split" || m.editor != nil {
+		t.Fatal("hover did not highlight the button, or changed the query/list")
+	}
+	m = manage(t, m)
+	selectEntry(t, &m, "a")
+	m.editAlias()
+	m.query.SetValue("unsaved alias")
+	label, area, _ = m.entryControl()
+	if label != "[ Cancel alias ]" {
+		t.Fatal("alias editor has no cancel button")
+	}
+	m, cmd := click(t, m, area.start+1, 0)
+	if cmd != nil || m.editor == nil || m.editor.aliasID != "" || m.preferences["a"].Alias != "" {
+		t.Fatal("cancel button did not discard the alias and return to settings")
+	}
+	label, area, _ = m.entryControl()
+	if label != "[ Back to palette ]" {
+		t.Fatal("settings list has no return button")
+	}
+	m, cmd = click(t, m, area.start+1, 0)
+	if cmd != nil || m.editor != nil || m.query.Value() != "split" || len(m.ranked) != 1 {
+		t.Fatal("return button did not restore the original search")
+	}
+}
+
+func TestEntrySettingsButtonIsDisabledDuringCommandsAndChoices(t *testing.T) {
+	for _, state := range []string{"pending", "confirmation", "choices", "reply"} {
+		t.Run(state, func(t *testing.T) {
+			m := preferenceModel(t)
+			switch state {
+			case "pending":
+				m.pending = true
+			case "confirmation":
+				m.confirming = &m.source.Commands[0]
+			case "choices":
+				m.choosing = &chooser{}
+			case "reply":
+				m.replying = &m.ranked[0]
+			}
+			_, area, enabled := m.entryControl()
+			if enabled {
+				t.Fatal("button enabled while another interaction is active")
+			}
+			before := m.confirming
+			m, cmd := click(t, m, area.start+1, 0)
+			if cmd != nil || m.editor != nil || m.confirming != before {
+				t.Fatal("disabled button interrupted an active interaction")
+			}
+		})
+	}
+}
+
+func TestCtrlSDoesNotOpenOrCloseEntrySettings(t *testing.T) {
+	m := preferenceModel(t)
+	m, _ = send(t, m, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	if m.editor != nil {
+		t.Fatal("ctrl+s still opens settings")
+	}
+	m = manage(t, m)
+	m, _ = send(t, m, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	if m.editor == nil {
+		t.Fatal("ctrl+s still closes settings")
 	}
 }

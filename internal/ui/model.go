@@ -424,6 +424,18 @@ func (m model) mouse(msg tea.Mouse) (tea.Model, tea.Cmd) {
 	if m.replying != nil {
 		return m, nil
 	}
+	at := m.targetAt(m.layout(), msg.X, msg.Y)
+	if at.kind == targetEntrySettings && msg.Button == tea.MouseLeft {
+		if _, _, enabled := m.entryControl(); !enabled {
+			return m, nil
+		}
+		if m.editor != nil && m.editor.aliasID != "" {
+			m.finishAlias(false)
+		} else {
+			m.manageEntries()
+		}
+		return m, nil
+	}
 	if m.editor != nil {
 		if m.editor.aliasID != "" {
 			return m, nil
@@ -441,7 +453,6 @@ func (m model) mouse(msg tea.Mouse) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	at := m.targetAt(m.layout(), msg.X, msg.Y)
 	if m.mouseFields(at, msg.Button) {
 		return m, nil
 	}
@@ -547,6 +558,7 @@ const (
 	// targetScroll is a count of the fields out of sight, with index the
 	// field next to those on show it leads to.
 	targetScroll
+	targetEntrySettings
 )
 
 // target is what the pointer is over, with index the row, field or option.
@@ -585,6 +597,9 @@ func (m model) layout() layout {
 func (m model) targetAt(l layout, x, y int) target {
 	if m.replying != nil {
 		return target{}
+	}
+	if label, area, _ := m.entryControl(); label != "" && y == 0 && area.contains(x) {
+		return target{kind: targetEntrySettings}
 	}
 	if option, over := l.menu.at(x, y); over {
 		return target{targetOption, option}
@@ -663,9 +678,6 @@ func (m model) keyList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "ctrl+s":
-		m.manageEntries()
-		return m, nil
 	case "ctrl+o":
 		return m.togglePreview()
 	case "esc":
