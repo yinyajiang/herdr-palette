@@ -66,7 +66,7 @@ switch ($machine) {
 }
 
 $asset = "palette-windows-$arch.zip"
-$release = "https://github.com/vika2603/herdr-palette/releases/download/v$version"
+$release = "https://github.com/yinyajiang/herdr-palette/releases/download/v$version"
 
 # Windows PowerShell 5.1 on an older .NET offers TLS 1.0 and 1.1 only unless
 # told otherwise, and GitHub accepts neither.

@@ -64,7 +64,7 @@ type (
 // popup too narrow for one.
 func (m model) previewWidth() int {
 	cols := m.cols()
-	if !m.previewEnabled || cols < previewMinCols {
+	if m.editor != nil || !m.previewEnabled || cols < previewMinCols {
 		return 0
 	}
 	return min(max(int(float64(cols)*previewShare), previewMinWidth), previewMaxWidth)

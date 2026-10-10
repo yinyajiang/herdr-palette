@@ -13,6 +13,7 @@ import (
 	"github.com/vika2603/herdr-client/plugin"
 
 	"github.com/vika2603/herdr-palette/internal/palette"
+	"github.com/vika2603/herdr-palette/internal/settings"
 	"github.com/vika2603/herdr-palette/internal/theme"
 )
 
@@ -58,8 +59,11 @@ type model struct {
 
 	// source is the commands, fixed while the popup is up, and what the
 	// session holds. targets is what an entry can act on while that is up.
-	source  palette.List
-	targets []palette.Entry
+	source         palette.List
+	targets        []palette.Entry
+	preferences    settings.EntryPreferences
+	preferencesErr error
+	editor         *entryEditor
 	// scope is what the rows are drawn from, and home the scope the popup was
 	// opened in: esc closes the popup from there rather than leaving it.
 	scope palette.Scope
@@ -174,6 +178,10 @@ func newModel(
 		previewEnabled: true,
 	}
 	m.changes = watch(ctx, env)
+	m.preferences, m.preferencesErr = settings.LoadEntries(env)
+	if m.preferencesErr != nil {
+		m.failure = "cannot load entries: " + m.preferencesErr.Error()
+	}
 	m.rank()
 	return m
 }
@@ -382,6 +390,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.replying != nil {
 			return m.queueReply(replyTextKeys(msg.Content))
 		}
+		if m.editor != nil && m.editor.aliasID != "" {
+			return m.editAliasInput(msg)
+		}
 		if m.confirming != nil {
 			m.confirming = nil
 			return m, nil
@@ -411,6 +422,23 @@ const wheelStep = 3
 func (m model) mouse(msg tea.Mouse) (tea.Model, tea.Cmd) {
 	// The agent's screen is not a list, and a click is not an answer to it.
 	if m.replying != nil {
+		return m, nil
+	}
+	if m.editor != nil {
+		if m.editor.aliasID != "" {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			m.move(-wheelStep)
+		case tea.MouseWheelDown:
+			m.move(wheelStep)
+		case tea.MouseLeft:
+			if row, ok := m.rowAt(msg.X, msg.Y); ok {
+				m.cursor = row
+				m.toggleEntry()
+			}
+		}
 		return m, nil
 	}
 	at := m.targetAt(m.layout(), msg.X, msg.Y)
@@ -611,6 +639,9 @@ func (m model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.replying != nil {
 		return m.keyReply(msg)
 	}
+	if m.editor != nil {
+		return m.keyEntries(msg)
+	}
 	return m.keyList(msg)
 }
 
@@ -632,6 +663,9 @@ func (m model) keyList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "ctrl+s":
+		m.manageEntries()
+		return m, nil
 	case "ctrl+o":
 		return m.togglePreview()
 	case "esc":
@@ -729,6 +763,10 @@ func (m model) editQuery(msg tea.Msg) (tea.Model, tea.Cmd) {
 // entry picks its target from a list. A row of such a list carries the target
 // and no list of its own, so choosing one runs the entry.
 func (m model) choose() (tea.Model, tea.Cmd) {
+	if m.editor != nil {
+		m.editAlias()
+		return m, nil
+	}
 	// A keystroke while the last one is still out on the socket would run the
 	// command twice, which for anything that creates something leaves two of
 	// it. The answer is on its way, and the footer says so.
@@ -861,7 +899,7 @@ func (m model) reload() tea.Cmd {
 // ones are kept for the way back instead of being shown.
 func (m *model) setOpen(session palette.Session) {
 	m.source.Session = session
-	if m.choosing != nil {
+	if m.choosing != nil || m.editor != nil && m.editor.aliasID != "" {
 		return
 	}
 
@@ -903,14 +941,17 @@ func (m model) candidates() []palette.Entry {
 	if m.choosing != nil {
 		return m.targets
 	}
-	return m.source.Rows(m.scope)
+	if m.editor != nil {
+		return m.displayEntries(m.source.All())
+	}
+	return m.displayEntries(applicable(m.source.Rows(m.scope), m.invocation))
 }
 
 // completion is the scope tab would complete the query to. Only the command
 // list narrows: inside a scope or a list of targets there is nothing to
 // complete to.
 func (m model) completion() (palette.Scope, bool) {
-	if m.narrowed() || m.choosing != nil || m.pending {
+	if m.editor != nil || m.narrowed() || m.choosing != nil || m.pending {
 		return palette.Scope{}, false
 	}
 	return palette.Complete(m.query.Value())
@@ -922,7 +963,7 @@ func (m *model) rank() {
 	m.ranked = palette.Rank(entries, text, m.recent)
 	// A list nobody has searched yet is laid out in groups; a query's matches
 	// are one list in the order they matched, which the groups would break.
-	if strings.TrimSpace(text) == "" && m.choosing == nil {
+	if strings.TrimSpace(text) == "" && m.choosing == nil && m.editor == nil {
 		m.ranked, m.lines = grouped(m.ranked)
 		// A scope holds rows of a kind, where headings that tell commands from
 		// places say nothing; the order they give is kept.

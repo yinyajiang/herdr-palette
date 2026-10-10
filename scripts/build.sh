@@ -36,7 +36,7 @@ x86_64 | amd64) arch=amd64 ;;
 esac
 
 asset="palette-$os-$arch.tar.gz"
-release="https://github.com/vika2603/herdr-palette/releases/download/v$version"
+release="https://github.com/yinyajiang/herdr-palette/releases/download/v$version"
 
 if command -v curl >/dev/null 2>&1; then
 	fetch() { curl -fsSL -o "$1" "$2"; }

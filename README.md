@@ -8,7 +8,7 @@ Requires [herdr](https://herdr.dev) 0.9.0 or newer, on Linux, macOS or Windows.
 ## Install
 
 ```sh
-herdr plugin install vika2603/herdr-palette
+herdr plugin install yinyajiang/herdr-palette
 ```
 
 Install builds from source when Go is present, and otherwise downloads the
@@ -87,6 +87,7 @@ and appear in the footer for the selected row.
 | `tab` | list only the scope the query starts the name of; otherwise move into the fields of a script that takes arguments, or answer the selected agent when it is blocked, and `esc` gives the keyboard back |
 | `ctrl+x` | close the selected pane, tab or workspace without going there |
 | `ctrl+o` | hide or show the side preview on a wide popup |
+| `ctrl+s` | open the entry display settings |
 | `ctrl+u` | clear the query |
 | `backspace` | leave a scope or a list of targets, once the query is empty |
 | `esc` | close the popup, or leave a scope or a list of targets |
@@ -96,6 +97,22 @@ A command that cannot be undone asks first: `enter` runs it, any other key
 cancels.
 
 ## Configuration
+
+Press `ctrl+s` in the popup to manage which entries appear and how they are
+named. The settings list includes hidden entries, selection-only actions,
+tabs and workspaces. Type to search, use `up` / `down` to select a row, and
+press `space` or click a row to toggle its `[x]` (shown) / `[ ]` (hidden) state.
+Press `enter` or `ctrl+r` to edit its display alias (remark name), then
+`enter` to save or `esc` to cancel. An empty alias restores the original name.
+Press `esc` or `ctrl+s` from the settings list to return to the palette.
+
+Changes are saved immediately in `entries.toml` beside the palette's
+`config.toml`, keyed by each entry's ID. Hidden entries are excluded from
+every normal scope, and aliases remain searchable by their original names.
+Aliases only change the palette's display; commands and actual pane, tab or
+workspace names keep their existing behavior. Preferences for open panes,
+tabs and workspaces belong to that object's ID, so newly created objects
+start with defaults.
 
 The palette's own `config.toml` is in the directory
 `herdr plugin config-dir herdr.palette` prints. Everything is optional:

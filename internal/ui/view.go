@@ -323,6 +323,10 @@ func (m model) View() tea.View {
 // asking about something that cannot be undone.
 func (m model) mode() (string, bool) {
 	switch {
+	case m.editor != nil && m.editor.aliasID != "":
+		return "ALIAS", false
+	case m.editor != nil:
+		return "ENTRIES", false
 	case m.replying != nil:
 		return modeReply, false
 	case m.confirming != nil:
@@ -836,6 +840,9 @@ func (m model) footer() string {
 	if m.notice != "" {
 		return m.styles.plain.meta.Render(truncate(" "+m.notice, m.cols()))
 	}
+	if m.editor != nil {
+		return m.entriesFooter()
+	}
 
 	// A row that cannot be undone takes the whole line: what it is about to do
 	// is the only thing the next keystroke decides.
@@ -927,6 +934,12 @@ func (m model) footer() string {
 	// list; the keys are dropped one at a time only once the line is too
 	// narrow to leave the left anything worth reading.
 	keys := m.fitHints(append(append([]hint{act}, more...), back))
+	if m.choosing == nil && !m.pending {
+		withSettings := m.hints(append(append(append([]hint{act}, more...), back), hint{spelling.name("ctrl+s"), "entries"}))
+		if lipgloss.Width(left)+lipgloss.Width(withSettings)+2 <= m.cols() {
+			keys = withSettings
+		}
+	}
 	left = truncate(left, max(m.cols()-lipgloss.Width(keys)-2, 1))
 	return m.spread(m.styles.plain.meta.Render(left), keys)
 }

@@ -23,7 +23,6 @@ func Run(ctx context.Context, env *plugin.Env, list palette.List, loadErr error,
 	// before any adaptive colour can render; Init asks through the framework.
 	lipgloss.SetHasDarkBackground(true)
 	invocation := invocationContext(env)
-	list.Commands = applicable(list.Commands, invocation)
 
 	m := newModel(ctx, env, invocation, list, palette.ReadRecent(env), colours, toggle)
 	if scope, ok := palette.ParseScope(os.Getenv(palette.ScopeEnv)); ok {

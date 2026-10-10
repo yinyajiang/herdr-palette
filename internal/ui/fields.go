@@ -293,7 +293,7 @@ func (m *model) optionsLoaded(msg optionsMsg) {
 // the query line then carries fields for. Not while a list of targets, a
 // question or an agent's screen is up: the line belongs to them then.
 func (m model) fielded() (palette.Entry, bool) {
-	if m.choosing != nil || m.replying != nil || m.confirming != nil || m.cursor >= len(m.ranked) {
+	if m.editor != nil || m.choosing != nil || m.replying != nil || m.confirming != nil || m.cursor >= len(m.ranked) {
 		return palette.Entry{}, false
 	}
 	entry := m.ranked[m.cursor].Entry
